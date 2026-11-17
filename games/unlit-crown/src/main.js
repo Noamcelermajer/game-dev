@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { createPixelRenderer, createCamera } from './render.js';
 import { buildArena } from './arena.js';
 import { createHero } from './hero.js';
+import { loadKit } from './props.js';
 import { texUniforms } from './materials.js';
 
 const canvas = document.getElementById('game');
@@ -12,7 +13,8 @@ const camera = createCamera();
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x030206);
 
-const world = buildArena(7);
+const kit = await loadKit();
+const world = buildArena(7, kit);
 scene.add(world.group);
 const hero = await createHero();
 scene.add(hero.group);
@@ -66,7 +68,8 @@ function measureLight() {
 let gui = null;
 const params = {
   palette: true, dither: 0.008, outline: 0.62, highlight: 0.32, crease: 0.4,
-  exposure: 2.3, vignette: 0.55, texture: 0.3,
+  saturation: 1.18, contrast: 1.1, split: 1.0,
+  exposure: 2.3, vignette: 0.5, texture: 0.22, moon: 0.5,
   lantern: 50, braziers: 80, crown: 45, ambient: 1.5,
 };
 function applyParams() {
@@ -74,6 +77,8 @@ function applyParams() {
   u.uPalette.value = params.palette ? 1 : 0; u.uDither.value = params.dither;
   u.uOutline.value = params.outline; u.uHighlight.value = params.highlight; u.uCrease.value = params.crease;
   u.uExposure.value = params.exposure; u.uVignette.value = params.vignette;
+  u.uSaturation.value = params.saturation; u.uContrast.value = params.contrast; u.uSplit.value = params.split;
+  world.moon.intensity = params.moon;
   texUniforms.uNoise.value = params.texture;
   hero.light.userData.base = params.lantern;
   world.braziers.forEach((b) => { b.userData.base = params.braziers; });
@@ -90,7 +95,10 @@ async function toggleGui() {
   px.add(params, 'outline', 0, 1, 0.02).name('outlines');
   px.add(params, 'highlight', 0, 1, 0.02).name('edge highlights');
   px.add(params, 'crease', 0, 1, 0.02).name('corner shading');
-  px.add(params, 'exposure', 0.4, 3, 0.05);
+  px.add(params, 'exposure', 0.4, 4, 0.05);
+  px.add(params, 'saturation', 0.5, 2, 0.05);
+  px.add(params, 'contrast', 0.7, 1.6, 0.05);
+  px.add(params, 'split', 0, 2, 0.05).name('warm/cool split');
   px.add(params, 'vignette', 0, 1, 0.05);
   px.add(params, 'texture', 0, 0.8, 0.02).name('stone texture');
   const li = gui.addFolder('Lights');
@@ -98,6 +106,7 @@ async function toggleGui() {
   li.add(params, 'braziers', 0, 80, 1);
   li.add(params, 'crown', 0, 80, 1).name('crown shard');
   li.add(params, 'ambient', 0, 4, 0.05);
+  li.add(params, 'moon', 0, 3, 0.05).name('cool top light');
   gui.onChange(applyParams);
 }
 applyParams();

@@ -14,16 +14,20 @@ One arena, built to match the style anchor in [docs/concept/](docs/concept/):
 ## Controls
 
 - WASD or arrow keys: move
-- G: open the tuning panel (outlines, edge highlights, palette, exposure, light strengths)
+- G: open the tuning panel (outlines, edge highlights, palette, saturation, contrast, light strengths)
 
 ## Run it
 
 Serve the repo root over HTTP and open `games/unlit-crown/`. Three.js loads from a CDN, so you need to be online.
 
-To rebuild the hero after editing the script:
+To rebuild the hero or the prop kit after editing a script:
 
 ```bash
 blender --background --python games/unlit-crown/art/build_hero.py
+```
+
+```bash
+blender --background --python games/unlit-crown/art/build_arena_kit.py
 ```
 
 ## Code
@@ -32,8 +36,10 @@ blender --background --python games/unlit-crown/art/build_hero.py
 | --- | --- |
 | `src/render.js` | Low-resolution render, edge and palette pass, fixed camera |
 | `src/materials.js` | Lit materials with brick and flagstone patterns in screen pixels; glow sprites |
-| `src/arena.js` | Generates the arena, lights and effects from a seed |
+| `src/arena.js` | Generates the arena, lights and effects from a seed, and places kit props |
+| `src/props.js` | Loads the prop kit and hands out lit, outlined copies by name |
 | `src/hero.js` | Loads the hero model, plays its animations, handles movement, collision and the lantern |
+| `art/build_arena_kit.py` | Blender script that builds the prop kit (columns, braziers, urns, skeletons, candles, banners) and exports `assets/arena_kit.glb` |
 | `art/build_hero.py` | Blender script that builds the hero and exports `assets/hero.glb`. It also saves an editable `art/hero.blend`, which is not committed because the script recreates it. |
 | `src/main.js` | Wiring, input, light meter, tuning panel |
 

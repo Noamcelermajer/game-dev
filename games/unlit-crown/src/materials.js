@@ -7,13 +7,13 @@ export const texUniforms = {
   uElev: { value: new THREE.Vector2(Math.sin(CAMERA_ELEVATION), Math.cos(CAMERA_ELEVATION)) },
 };
 
-// pattern: 'plain' | 'floor' (ringed flagstones) | 'brick' (coursed masonry)
+// pattern: 'plain' | 'floor' (ringed flagstones) | 'brick' (coursed masonry) | 'course' (column drums)
 // The surface texture is laid out in screen pixels: one texel is one pixel on screen.
 export function stoneMaterial({ color = 0xffffff, pattern = 'plain', flat = false, noise = 1, glow = 0 } = {}) {
   const m = new THREE.MeshLambertMaterial({ color, flatShading: flat });
   if (glow) m.emissive = new THREE.Color(color).multiplyScalar(glow);
   m.onBeforeCompile = (s) => {
-    s.uniforms.uPattern = { value: { plain: 0, floor: 1, brick: 2 }[pattern] };
+    s.uniforms.uPattern = { value: { plain: 0, floor: 1, brick: 2, course: 3 }[pattern] };
     s.uniforms.uNoiseMul = { value: noise };
     s.uniforms.uNoise = texUniforms.uNoise;
     s.uniforms.uElev = texUniforms.uElev;
@@ -70,6 +70,16 @@ export function stoneMaterial({ color = 0xffffff, pattern = 'plain', flat = fals
             else if (flagstone(P.xz - vec2(0.0, dz)).y > 0.5) k *= 1.2;   // top edge of a stone catches light
             else if (flagstone(P.xz + vec2(0.0, dz)).y > 0.5) k *= 0.84;  // bottom edge sits in shade
             if (h2(floor(P.xz * 2.0) + 5.0) > 0.93 && n > 0.6) k *= 0.6;  // worn chips
+          } else if (uPattern > 2.5) {
+            if (!top) {
+              float bh = 14.0;                                     // one column drum, in pixels
+              float fy = mod(q.y + 3.0, bh);
+              k *= 0.92 + 0.16 * h2(vec2(floor((q.y + 3.0) / bh), 5.0));
+              if (fy < 0.5) k *= 0.55;                             // seam
+              else if (fy > bh - 1.5) k *= 1.12;
+              else if (fy < 1.5) k *= 0.9;
+              k *= mix(0.7, 1.0, smoothstep(-0.15, 0.6, P.y));
+            }
           } else if (uPattern > 1.5) {
             if (!top) {
               float bw = 10.0, bh = 5.0;                           // brick size in pixels

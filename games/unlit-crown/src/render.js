@@ -18,7 +18,7 @@ export const PALETTE = [
   '#a53f22', '#814d4c', '#934b3a', '#7b5660', '#965047', '#a95136', '#4a709f', '#bd592a',
   '#c45c35', '#be6b47', '#a2776e', '#ef6d25', '#6a9bc5', '#eb7935', '#e0a171', '#b4cacb',
   '#d8d0b8', '#ffc45a', '#fff0b0', '#c9963a', '#e6f4ff', '#1f1a2e',
-  '#5a1420', '#8c1f2b', '#b02c38',
+  '#561224', '#8e1a30', '#b3243e',
 ];
 
 function oklab([r, g, b]) {
@@ -60,7 +60,10 @@ export function createPixelRenderer(canvas) {
       uRes: { value: new THREE.Vector2(GAME_W, GAME_H) },
       uDepthRange: { value: 1 },
       uExposure: { value: 1.9 },
-      uVignette: { value: 0.6 },
+      uVignette: { value: 0.5 },
+      uSaturation: { value: 1.18 },   // colour strength before the palette
+      uContrast: { value: 1.1 },
+      uSplit: { value: 1.0 },         // violet shadows, warm lights
       uOutline: { value: 0.62 },      // how much outlines darken
       uHighlight: { value: 0.32 },    // how much lit edges brighten
       uCrease: { value: 0.4 },        // how much inner corners darken
@@ -79,6 +82,7 @@ export function createPixelRenderer(canvas) {
       uniform sampler2D tScene, tNormal, tDepth, tDepthAll;
       uniform vec2 uRes;
       uniform float uDepthRange, uExposure, uVignette, uOutline, uHighlight, uCrease, uPalette, uDither;
+      uniform float uSaturation, uContrast, uSplit;
       uniform vec3 uPal[PAL_N];
       uniform vec3 uPalRgb[PAL_N];
       varying vec2 vUv;
@@ -108,6 +112,13 @@ export function createPixelRenderer(canvas) {
         float m0 = max(c.r, max(c.g, c.b));
         c *= (1.0 - exp(-m0 * uExposure)) / max(m0, 1e-4);     // curve on brightness only, keeps hue
         c = pow(c, vec3(1.0 / 2.2));
+        // grade: stronger colour, more contrast, shadows pushed violet and lights pushed warm
+        float lum = dot(c, vec3(0.299, 0.587, 0.114));
+        c = mix(vec3(lum), c, uSaturation);
+        c = (c - 0.38) * uContrast + 0.38;
+        c += uSplit * (1.0 - smoothstep(0.0, 0.4, lum)) * vec3(0.012, 0.0, 0.05);
+        c *= mix(vec3(1.0), vec3(1.07, 1.0, 0.9), uSplit * smoothstep(0.35, 0.9, lum));
+        c = max(c, 0.0);
         vec2 vd = (vUv - 0.5) * vec2(1.0, 0.82);
         c *= mix(1.0, smoothstep(0.78, 0.22, length(vd)), uVignette);
 

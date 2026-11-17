@@ -42,7 +42,7 @@ export async function createHero() {
   const lanternBone = model.getObjectByName('lantern');
   const glow = glowSprite(0xff8a28, 2.6, 0.5);
   glow.position.set(0, 0.33, 0);
-  const light = new THREE.PointLight(0xff8a2a, 50, 0, 2);
+  const light = new THREE.PointLight(0xff8c2c, 50, 0, 2);
   light.position.set(0, 0.33, 0);
   light.castShadow = true;
   light.userData = { base: 50, kind: 'lantern' };

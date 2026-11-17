@@ -6,8 +6,7 @@ import { CAMERA_ELEVATION, LAYER_FX } from './render.js';
 // one brick course, so block tops land on mortar lines (5 px of wall)
 const COURSE = 5 / (16 * Math.cos(CAMERA_ELEVATION));
 
-const STONE = ['#6e6672', '#5f5866', '#7a7078', '#685e64', '#746a6e'];
-const BONE = '#d8d2c0';
+const STONE = ['#6c6478', '#5c566c', '#7a7080', '#6a5c66', '#766a72', '#645e78'];
 const VINE = ['#7a1f2a', '#8a2a2a', '#5e1820', '#7a6a22'];
 
 class Batch {
@@ -95,24 +94,24 @@ function makeEmbers(count, origin, color, spread, rise) {
   return pts;
 }
 
-export function buildArena(seed = 7) {
+export function buildArena(seed = 7, kit) {
   const rnd = mulberry32(seed);
   const R = (a, b) => a + rnd() * (b - a);
   const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
   const stone = (dim = 1) => {
     const c = new THREE.Color(pick(STONE));
-    c.offsetHSL(0, 0, R(-0.05, 0.05));
+    c.offsetHSL(R(-0.015, 0.015), R(0, 0.05), R(-0.05, 0.05));
     return c.multiplyScalar(dim);
   };
 
   const group = new THREE.Group();
   const stoneMat = stoneMaterial({ pattern: 'brick' });
   const boxes = new Batch(new THREE.BoxGeometry(1, 1, 1), stoneMat);
-  const cyls = new Batch(new THREE.CylinderGeometry(0.5, 0.5, 1, 10), stoneMaterial({ flat: true, pattern: 'brick' }));
   const smalls = new Batch(new THREE.BoxGeometry(1, 1, 1), stoneMaterial({ noise: 0.5 }), { cast: false, layer: LAYER_FX });
-  const glows = new Batch(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial(), { cast: false, receive: false, layer: LAYER_FX });
   const animated = [];
   const obstacles = [];
+  const TINTS = ['#ffffff', '#f0ecff', '#fff2ea', '#e6e2f2'];
+  const put = (name, opts) => { const ob = kit.place(name, opts); group.add(ob); return ob; };
 
   // --- floor -----------------------------------------------------------
   const FLOOR_R = 7.4;
@@ -164,28 +163,22 @@ export function buildArena(seed = 7) {
   boxes.add(0, -0.6, 8.6, 3.2, 0.2, 0.9, stone());
 
   // --- pillars ----------------------------------------------------------
-  const pillarAt = (x, z, drums, broken) => {
-    boxes.add(x, -0.6, z, 1.7, 1.05, 1.7, stone(), R(-0.05, 0.05));
-    boxes.add(x, 0.45, z, 1.35, 0.3, 1.35, stone());
-    let y = 0.75;
-    for (let i = 0; i < drums; i++) {
-      const h = R(0.8, 1.0), r = R(1.0, 1.12);
-      cyls.add(x + R(-0.03, 0.03), y, z + R(-0.03, 0.03), r, h, r, stone(), R(0, 3));
-      y += h;
-    }
-    if (!broken) {
-      boxes.add(x, y, z, 1.4, 0.3, 1.4, stone());
-      boxes.add(x, y + 0.3, z, 1.75, 0.35, 1.75, stone());
-      y += 0.65;
+  const pillarAt = (x, z, broken) => {
+    boxes.add(x, -0.6, z, 1.75, 1.05, 1.75, stone(), R(-0.05, 0.05));
+    put(broken ? 'pillar_broken' : 'pillar', { x, y: 0.45, z, rot: R(0, 6.28), tint: pick(TINTS) });
+    const top = 0.45 + (broken ? 3.5 : 6.66);
+    if (broken) {                                           // what fell off lies nearby
+      put('drum', { x: x + R(-1.6, -1.1), y: -0.6, z: z + R(1.3, 1.8), rot: R(0, 6.28) });
+      put('rubble_a', { x: x + R(0.9, 1.3), y: -0.6, z: z + R(0.8, 1.4), rot: R(0, 6.28) });
     }
     // hanging vines
     const vx = x + R(-0.4, 0.4), vc = pick(VINE);
-    for (let k = 0, n = Math.floor(R(4, 9)); k < n; k++) smalls.add(vx + R(-0.08, 0.08), y - 0.6 - k * 0.2, z + 0.62, 0.13, 0.16, 0.08, vc);
+    for (let k = 0, n = Math.floor(R(4, 9)); k < n; k++) smalls.add(vx + R(-0.08, 0.08), top - 0.9 - k * 0.2, z + 0.62, 0.13, 0.16, 0.08, vc);
     obstacles.push({ x, z, r: 1.2 });
-    return y;
+    return top;
   };
-  const P = [[-10.3, -2.2, 7, false], [-7.6, -8.2, 7, false], [-3.9, -10.8, 6, true], [3.9, -10.8, 7, false], [7.6, -8.2, 5, true], [10.3, -2.2, 7, false]];
-  const tops = P.map(([x, z, d, b]) => pillarAt(x, z, d, b));
+  const P = [[-10.3, -2.2, false], [-7.6, -8.2, false], [-3.9, -10.8, true], [3.9, -10.8, false], [7.6, -8.2, true], [10.3, -2.2, false]];
+  const tops = P.map(([x, z, b]) => pillarAt(x, z, b));
 
   // arches between the outer pillar pairs
   const arch = (i, j) => {
@@ -200,17 +193,8 @@ export function buildArena(seed = 7) {
   arch(0, 1);
 
   // --- banners ----------------------------------------------------------
-  const banner = (x, z, y) => {
-    const red = new THREE.Color('#7a1c24');
-    boxes.add(x, y + 2.5, z, 2.4, 0.07, 0.07, '#2a2420');
-    boxes.add(x, y, z, 1.3, 2.5, 0.06, red);
-    [[-0.45, 0.55], [0, 0.3], [0.45, 0.7]].forEach(([dx, len]) => boxes.add(x + dx, y - len, z, 0.36, len, 0.06, red));
-    const gold = new THREE.Color('#c9963a');
-    smalls.add(x, y + 1.35, z + 0.05, 0.6, 0.14, 0.03, gold);
-    [-0.24, 0, 0.24].forEach((dx, i) => smalls.add(x + dx, y + 1.49, z + 0.05, 0.12, i === 1 ? 0.3 : 0.2, 0.03, gold));
-  };
-  banner(-5.8, -9.4, 3.0);
-  banner(9.0, -5.2, 2.6);
+  put('banner', { x: -5.8, y: 5.6, z: -9.4 });
+  put('banner', { x: 9.0, y: 5.2, z: -5.2 });
 
   // --- altar ------------------------------------------------------------
   const AZ = -8.7;
@@ -219,21 +203,17 @@ export function buildArena(seed = 7) {
   boxes.add(0, 0.7, -8.8, 4.6, 0.35, 2.8, stone());
   boxes.add(0, 1.05, AZ, 2.7, 0.9, 1.2, stone(1.05));
   boxes.add(0, 1.95, AZ, 3.0, 0.2, 1.45, stone(1.1));
-  boxes.add(0, 1.0, AZ + 0.64, 0.95, 1.18, 0.05, '#7a1c24');   // altar cloth
-  smalls.add(0, 1.55, AZ + 0.68, 0.12, 0.36, 0.02, '#c9963a');
-  smalls.add(0, 1.72, AZ + 0.68, 0.3, 0.1, 0.02, '#c9963a');
+  put('altar_cloth', { x: 0, y: 2.15, z: AZ });
   obstacles.push({ rect: [-3.5, 3.5, -11, -5.9] });
 
-  const flameCol = new THREE.Color(0xffc860).multiplyScalar(3);
-  const candle = (x, y, z) => {
-    const h = R(0.25, 0.65);
-    smalls.add(x, y, z, 0.13, h, 0.13, '#e8dcc0');
-    glows.add(x, y + h + 0.02, z, 0.08, 0.14, 0.08, flameCol);
-  };
+  // candles with wax drips, clustered on the altar and down its steps
+  [
+    ['candles_a', -1.15, 2.15, AZ + 0.1], ['candles_b', 1.2, 2.15, AZ], ['candle', 0.78, 2.15, AZ + 0.42],
+    ['candles_a', -1.95, 1.05, -7.8], ['candles_a', 1.95, 1.05, -7.85], ['candle', -1.5, 1.05, -7.65],
+    ['candles_b', -2.55, 0.7, -7.0], ['candles_b', 2.55, 0.7, -7.05], ['candle', 2.15, 0.7, -6.95],
+    ['candles_a', -3.0, 0.35, -6.3], ['candles_b', 3.05, 0.35, -6.4], ['candle', 2.6, 0.35, -6.15], ['candle', -2.5, 0.35, -6.2],
+  ].forEach(([name, x, y, z]) => put(name, { x, y, z, rot: R(0, 6.28), scale: 1.2 }));
   for (const side of [-1, 1]) {
-    for (let i = 0; i < 4; i++) candle(side * R(1.0, 1.4), 2.15, AZ + R(-0.5, 0.5));
-    for (let i = 0; i < 4; i++) candle(side * R(1.7, 2.2), 1.05, AZ + R(0.3, 1.2));
-    for (let i = 0; i < 3; i++) candle(side * R(2.3, 2.7), 0.7, AZ + R(1.2, 2.1));
     const cl = new THREE.PointLight(0xffa040, 6, 7, 2);
     cl.position.set(side * 1.7, 2.4, AZ + 0.9);
     group.add(cl);
@@ -278,7 +258,7 @@ export function buildArena(seed = 7) {
   sigil.layers.set(LAYER_FX);
   group.add(sigil);
 
-  const crownLight = new THREE.PointLight(0x6aa8ff, 26, 0, 2);
+  const crownLight = new THREE.PointLight(0x5a9cff, 45, 0, 2);
   crownLight.position.set(0, 3.6, AZ + 0.2);
   crownLight.castShadow = true;
   crownLight.userData = { base: 26, kind: 'crown' };
@@ -308,27 +288,23 @@ export function buildArena(seed = 7) {
 
   // --- braziers ---------------------------------------------------------
   const braziers = [];
-  const iron = new THREE.MeshLambertMaterial({ color: '#2c2622' });
   const brazier = (x, z, phase) => {
     boxes.add(x, -0.6, z, 1.25, 1.35, 1.25, stone());
     boxes.add(x, 0.75, z, 1.0, 0.2, 1.0, stone());
-    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.32, 0.42, 8, 1, true), iron);
-    bowl.material.side = THREE.DoubleSide;
-    bowl.position.set(x, 1.16, z);
-    group.add(bowl);
-    glows.add(x, 1.2, z, 0.7, 0.12, 0.7, new THREE.Color(0xff5a10).multiplyScalar(1.4));
+    // the basket would shade the floor all around it, so it casts no shadow
+    put('brazier', { x, y: 0.95, z, rot: phase, scale: 1.1 }).traverse((o) => { o.castShadow = false; });
     const flame = makeFlame(1);
-    flame.position.set(x, 1.22, z);
+    flame.position.set(x, 1.75, z);
     group.add(flame);
     const glow = glowSprite(0xff7a20, 3.4, 0.5);
-    glow.position.set(x, 1.7, z + 0.3);
+    glow.position.set(x, 2.2, z + 0.3);
     group.add(glow);
-    const light = new THREE.PointLight(0xff7420, 60, 0, 2);
-    light.position.set(x, 2.0, z);
+    const light = new THREE.PointLight(0xff8226, 80, 0, 2);
+    light.position.set(x, 2.55, z);
     light.castShadow = true;
     light.userData = { base: 30, kind: 'brazier' };
     group.add(light);
-    const embers = makeEmbers(22, new THREE.Vector3(x, 1.5, z), 0xffa040, 0.5, 3.2);
+    const embers = makeEmbers(22, new THREE.Vector3(x, 2.0, z), 0xffa040, 0.5, 3.2);
     group.add(embers);
     animated.push((t, tq) => {
       flame.userData.update(tq, phase);
@@ -343,46 +319,43 @@ export function buildArena(seed = 7) {
   brazier(-6.2, -2.0, 0.0);
   brazier(6.1, 2.4, 2.4);
 
-  // --- bones, pots, rubble ---------------------------------------------
-  const skeleton = (x, z, rot) => {
-    const c = Math.cos(rot), s = Math.sin(rot);
-    const at = (dx, dz) => [x + dx * c - dz * s, z + dx * s + dz * c];
-    let [px, pz] = at(-0.55, 0); smalls.add(px, 0, pz, 0.24, 0.2, 0.22, BONE, -rot);
-    [px, pz] = at(0.15, 0); smalls.add(px, 0, pz, 0.9, 0.06, 0.07, BONE, -rot);
-    for (let i = 0; i < 4; i++) { [px, pz] = at(-0.2 + i * 0.16, 0); smalls.add(px, 0.02, pz, 0.06, 0.1, 0.46, BONE, -rot); }
-    [px, pz] = at(0.75, 0.16); smalls.add(px, 0, pz, 0.45, 0.06, 0.06, BONE, -rot + 0.5);
-    [px, pz] = at(0.75, -0.18); smalls.add(px, 0, pz, 0.45, 0.06, 0.06, BONE, -rot - 0.4);
-  };
-  skeleton(-2.2, -5.2, 0.4); skeleton(-4.6, -3.6, 2.3); skeleton(-4.2, 5.2, 0.2);
-  skeleton(5.0, 5.3, 2.9); skeleton(3.8, -4.4, 1.2);
-  [[-3.9, 4.6], [3.2, -5.3], [-5.4, -4.9]].forEach(([x, z]) => smalls.add(x, 0, z, 0.24, 0.22, 0.24, BONE, R(0, 3)));
-  for (let i = 0; i < 14; i++) {                              // loose bones
+  // --- bones, urns, rubble ---------------------------------------------
+  [[-2.2, -5.2, 0.4], [-4.6, -3.6, 2.3], [-4.2, 5.2, 0.2], [5.0, 5.3, 2.9], [3.8, -4.4, 1.2]]
+    .forEach(([x, z, rot]) => put('skeleton', { x, z, rot, scale: 1.25 }));
+  [[-3.9, 4.6], [3.2, -5.3], [-5.4, -4.9], [1.4, 6.2]].forEach(([x, z]) => put('skull', { x, z, rot: R(0, 6.28), scale: 1.3 }));
+  for (let i = 0; i < 12; i++) {                              // loose bones
     const a = R(0, 6.28), r = R(2.5, 6.8);
-    smalls.add(Math.cos(a) * r, 0, Math.sin(a) * r, 0.34, 0.05, 0.06, BONE, R(0, 3));
+    put('bone', { x: Math.cos(a) * r, z: Math.sin(a) * r, rot: R(0, 6.28), scale: 1.2 });
   }
-  cyls.add(-4.6, 0, -6.3, 0.55, 0.6, 0.55, new THREE.Color('#7a4a2c'));
-  cyls.add(3.4, 0, -5.6, 0.45, 0.45, 0.45, new THREE.Color('#6a4028'));
-  for (let i = 0; i < 26; i++) {                              // rubble on the floor edge
+  put('urn', { x: -4.6, z: -6.3, rot: 0.4, scale: 1.15 });
+  put('urn', { x: -5.35, z: -5.7, rot: 2.0, scale: 0.9 });
+  put('urn_broken', { x: 3.4, z: -5.6, rot: 1.1, scale: 1.15 });
+  put('drum', { x: 5.6, z: -3.6, rot: 2.3 });
+  put('drum', { x: -5.7, z: 3.4, rot: 0.6 });
+  for (let i = 0; i < 22; i++) {                              // rubble on the floor edge
     const a = R(0, 6.28), r = R(5.6, 7.1);
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (z < -5 && Math.abs(x) < 3.8) continue;
-    const s = R(0.14, 0.36);
-    smalls.add(x, 0, z, s, s * 0.7, s, stone(), R(0, 3));
+    put(pick(['rubble_a', 'rubble_b', 'rubble_c', 'rubble_c']), { x, z, rot: R(0, 6.28), scale: R(0.7, 1.1), tint: pick(TINTS) });
   }
   for (let i = 0; i < 40; i++) {                              // dry grass tufts
     const a = R(0, 6.28), r = R(4.5, 7.2);
     smalls.add(Math.cos(a) * r, 0, Math.sin(a) * r, 0.06, R(0.12, 0.26), 0.06, '#8a7a2a');
   }
 
-  const boxMesh = boxes.build(), cylMesh = cyls.build();
-  group.add(boxMesh, cylMesh, smalls.build(), glows.build());
+  const boxMesh = boxes.build();
+  group.add(boxMesh, smalls.build());
 
-  const ambient = new THREE.HemisphereLight(0x4a3e70, 0x161020, 1.5);
+  const ambient = new THREE.HemisphereLight(0x46408a, 0x140e22, 1.2);
   group.add(ambient);
+  // cool light from above: gives top faces a violet-blue cast to set against the warm fires
+  const moon = new THREE.DirectionalLight(0x5a4cc8, 0.5);
+  moon.position.set(-3, 10, -2);
+  group.add(moon);
 
   return {
-    group, ambient, crownLight, braziers,
-    occluders: [boxMesh, cylMesh],
+    group, ambient, moon, crownLight, braziers,
+    occluders: [boxMesh],
     obstacles, floorRadius: FLOOR_R,
     update(t) {
       const tq = Math.floor(t * 12) / 12;                     // effects tick at 12 fps
