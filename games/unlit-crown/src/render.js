@@ -19,6 +19,7 @@ export const PALETTE = [
   '#c45c35', '#be6b47', '#a2776e', '#ef6d25', '#6a9bc5', '#eb7935', '#e0a171', '#b4cacb',
   '#d8d0b8', '#ffc45a', '#fff0b0', '#c9963a', '#e6f4ff', '#1f1a2e',
   '#561224', '#8e1a30', '#b3243e',
+  '#ff4d6a', '#ffd9de',                                       // danger: reserved for attack warnings
 ];
 
 function oklab([r, g, b]) {
@@ -185,6 +186,7 @@ export function createPixelRenderer(canvas) {
   function resize() {
     const s = Math.max(1, Math.floor(Math.min(innerWidth / GAME_W, innerHeight / GAME_H)));
     renderer.setSize(GAME_W * s, GAME_H * s, true);
+    canvas.parentElement?.style.setProperty('--s', s);          // lets the HUD size itself in game pixels
   }
   addEventListener('resize', resize);
   resize();

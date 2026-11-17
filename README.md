@@ -46,4 +46,4 @@ Turn on GitHub Pages (Settings → Pages → Deploy from branch → `main`, `/ (
 
 | Game | Description |
 | --- | --- |
-| [The Unlit Crown](games/unlit-crown/) | Pixel-art action RPG where light is real. Currently M0: the lighting test arena. |
+| [The Unlit Crown](games/unlit-crown/) | Pixel-art action RPG where light is real. Currently M1: fight waves of Wax Husks. |

@@ -111,7 +111,7 @@ export function buildArena(seed = 7, kit) {
   const animated = [];
   const obstacles = [];
   const TINTS = ['#ffffff', '#f0ecff', '#fff2ea', '#e6e2f2'];
-  const put = (name, opts) => { const ob = kit.place(name, opts); group.add(ob); return ob; };
+  const put = (name, opts) => kit.add(name, opts);           // queued, then merged into a few meshes at the end
 
   // --- floor -----------------------------------------------------------
   const FLOOR_R = 7.4;
@@ -292,7 +292,7 @@ export function buildArena(seed = 7, kit) {
     boxes.add(x, -0.6, z, 1.25, 1.35, 1.25, stone());
     boxes.add(x, 0.75, z, 1.0, 0.2, 1.0, stone());
     // the basket would shade the floor all around it, so it casts no shadow
-    put('brazier', { x, y: 0.95, z, rot: phase, scale: 1.1 }).traverse((o) => { o.castShadow = false; });
+    put('brazier', { x, y: 0.95, z, rot: phase, scale: 1.1, cast: false });
     const flame = makeFlame(1);
     flame.position.set(x, 1.75, z);
     group.add(flame);
@@ -344,7 +344,7 @@ export function buildArena(seed = 7, kit) {
   }
 
   const boxMesh = boxes.build();
-  group.add(boxMesh, smalls.build());
+  group.add(boxMesh, smalls.build(), kit.build());
 
   const ambient = new THREE.HemisphereLight(0x46408a, 0x140e22, 1.2);
   group.add(ambient);

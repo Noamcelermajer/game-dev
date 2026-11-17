@@ -1,10 +1,18 @@
-// M0: the lighting test. One arena, one hero, real light, rendered as pixel art.
+// The Unlit Crown, M1: combat. Wires the simulation (sim.js) to what you see and hear.
+// The simulation advances in fixed ticks from input commands; everything else here only
+// draws its state and reacts to its events.
 import * as THREE from 'three';
 import { createPixelRenderer, createCamera } from './render.js';
 import { buildArena } from './arena.js';
-import { createHero } from './hero.js';
+import { createHeroView } from './hero.js';
+import { createEnemyViews } from './enemies.js';
+import { createFx } from './fx.js';
+import { createHud } from './hud.js';
+import { createSim } from './sim.js';
 import { loadKit } from './props.js';
 import { texUniforms } from './materials.js';
+import { sfx, unlock, toggleMute } from './audio.js';
+import { TICK, PLAYER, WAVES } from './config.js';
 
 const canvas = document.getElementById('game');
 const pixel = createPixelRenderer(canvas);
@@ -16,11 +24,16 @@ scene.background = new THREE.Color(0x030206);
 const kit = await loadKit();
 const world = buildArena(7, kit);
 scene.add(world.group);
-const hero = await createHero();
+const hero = await createHeroView();
 scene.add(hero.group);
+const enemies = await createEnemyViews(scene);
+const fx = createFx(scene, camera);
+const hud = createHud();
 
-// shadows: hard-edged, a few lights only
-const shadowLights = [hero.light, world.crownLight, ...world.braziers];
+// --- shadows: hard-edged, few lights. The lantern moves, so it updates every frame;
+// the fixed lights take turns, one per frame. -------------------------------------------
+const fixedLights = [world.crownLight, ...world.braziers];
+const shadowLights = [hero.light, ...fixedLights];
 for (const l of shadowLights) {
   l.shadow.mapSize.set(512, 512);
   l.shadow.camera.near = 0.05;
@@ -28,49 +41,79 @@ for (const l of shadowLights) {
   l.shadow.bias = -0.012;
   l.shadow.normalBias = 0.04;
 }
+for (const l of fixedLights) { l.shadow.autoUpdate = false; l.shadow.needsUpdate = true; }
+let shadowTurn = 0;
 
-// --- input ---------------------------------------------------------------
-const input = { up: false, down: false, left: false, right: false };
-const KEYS = { w: 'up', arrowup: 'up', s: 'down', arrowdown: 'down', a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right' };
+// --- simulation ----------------------------------------------------------------------
+const tmp = new THREE.Vector3();
+const sim = createSim({
+  floorRadius: world.floorRadius,
+  obstacles: world.obstacles,
+  lights: fixedLights.map((l) => { l.getWorldPosition(tmp); return { x: tmp.x, y: tmp.y, z: tmp.z, power: l.userData.base }; }),
+}, 7);
+
+// --- input: held directions, plus presses that last exactly one tick ------------------
+const held = { up: false, down: false, left: false, right: false };
+const pressed = { attack: false, roll: false, restart: false };
+const MOVE = { w: 'up', arrowup: 'up', s: 'down', arrowdown: 'down', a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right' };
+const ACTION = { j: 'attack', z: 'attack', ' ': 'roll', k: 'roll', x: 'roll', shift: 'roll', r: 'restart', enter: 'restart' };
 addEventListener('keydown', (e) => {
-  const k = KEYS[e.key.toLowerCase()];
-  if (k) { input[k] = true; e.preventDefault(); }
-  if (e.key.toLowerCase() === 'g') toggleGui();
+  unlock();
+  const key = e.key.toLowerCase();
+  if (MOVE[key]) { held[MOVE[key]] = true; e.preventDefault(); }
+  if (ACTION[key] && !e.repeat) { pressed[ACTION[key]] = true; e.preventDefault(); }
+  if (key === 'g') toggleGui();
+  if (key === 'm') hud.banner(toggleMute() ? 'SOUND OFF' : 'SOUND ON', 1);
 });
-addEventListener('keyup', (e) => { const k = KEYS[e.key.toLowerCase()]; if (k) input[k] = false; });
-addEventListener('blur', () => { for (const k in input) input[k] = false; });
+addEventListener('keyup', (e) => { const k = MOVE[e.key.toLowerCase()]; if (k) held[k] = false; });
+addEventListener('blur', () => { for (const k in held) held[k] = false; });
+canvas.addEventListener('mousedown', (e) => { unlock(); if (e.button === 0) pressed.attack = true; if (e.button === 2) pressed.roll = true; });
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-// --- light level at the hero (real lights, blocked by real walls) ----------
-const ray = new THREE.Raycaster();
-const lightBar = document.getElementById('light-bar');
-const tmp = new THREE.Vector3(), dir = new THREE.Vector3();
-let lightLevel = 0;
-function measureLight() {
-  const p = hero.chest();
-  let total = 0;
-  for (const l of shadowLights) {
-    l.getWorldPosition(tmp);
-    const d = p.distanceTo(tmp);
-    let lit = 1;
-    if (l !== hero.light) {
-      dir.subVectors(tmp, p).normalize();
-      ray.set(p, dir); ray.far = d - 0.3;
-      if (ray.intersectObjects(world.occluders, false).length) lit = 0;
-    }
-    total += lit * l.intensity / Math.max(d * d, 0.5);
-  }
-  lightLevel = 1 - Math.exp(-total * 0.03);
-  const n = Math.round(lightLevel * 10);
-  lightBar.textContent = '█'.repeat(n) + '░'.repeat(10 - n);
+function command() {
+  const cmd = {
+    mx: (held.right ? 1 : 0) - (held.left ? 1 : 0),
+    mz: (held.down ? 1 : 0) - (held.up ? 1 : 0),
+    attack: pressed.attack, roll: pressed.roll, restart: pressed.restart,
+  };
+  pressed.attack = pressed.roll = pressed.restart = false;
+  return cmd;
 }
 
-// --- tuning panel ------------------------------------------------------------
+// --- events from the simulation become effects, sound and pauses --------------------------
+let hitstop = 0;
+function handle(ev) {
+  switch (ev.type) {
+    case 'swing': fx.swing(ev); sfx.swing(ev.heavy); break;
+    case 'hit':
+      fx.burst(ev.x, 1.0, ev.z, ev.nx, ev.nz, ev.kill ? 16 : ev.heavy ? 11 : 7, ev.heavy ? 7 : 5);
+      fx.shake(ev.shake, ev.nx, ev.nz);
+      hitstop = Math.max(hitstop, ev.hitstop);
+      ev.kill ? sfx.kill() : sfx.hit(ev.heavy);
+      break;
+    case 'roll': sfx.roll(); break;
+    case 'enemyWindup': sfx.windup(); break;
+    case 'enemyAttack': sfx.slam(); fx.shake(1); break;
+    case 'playerHurt': fx.shake(ev.shake); hud.flashHurt(); hitstop = Math.max(hitstop, ev.hitstop); sfx.hurt(); break;
+    case 'playerDead': sfx.dead(); break;
+    case 'spawn': sfx.spawn(); break;
+    case 'wave': hud.banner(`WAVE ${ev.n}`); sfx.wave(); break;
+    case 'restart': hud.banner('RISE AGAIN', 1.4); break;
+  }
+}
+
+function tick() {
+  sim.step(command());
+  for (const ev of sim.drain()) handle(ev);
+}
+
+// --- tuning panel ----------------------------------------------------------------------
 let gui = null;
 const params = {
   palette: true, dither: 0.008, outline: 0.62, highlight: 0.32, crease: 0.4,
   saturation: 1.18, contrast: 1.1, split: 1.0,
   exposure: 2.3, vignette: 0.5, texture: 0.22, moon: 0.5,
-  lantern: 50, braziers: 80, crown: 45, ambient: 1.5,
+  lantern: PLAYER.lanternPower, braziers: 80, crown: 45, ambient: 1.5,
 };
 function applyParams() {
   const u = pixel.post.uniforms;
@@ -102,37 +145,57 @@ async function toggleGui() {
   px.add(params, 'vignette', 0, 1, 0.05);
   px.add(params, 'texture', 0, 0.8, 0.02).name('stone texture');
   const li = gui.addFolder('Lights');
-  li.add(params, 'lantern', 0, 40, 1);
-  li.add(params, 'braziers', 0, 80, 1);
-  li.add(params, 'crown', 0, 80, 1).name('crown shard');
+  li.add(params, 'lantern', 0, 100, 1);
+  li.add(params, 'braziers', 0, 160, 1);
+  li.add(params, 'crown', 0, 120, 1).name('crown shard');
   li.add(params, 'ambient', 0, 4, 0.05);
   li.add(params, 'moon', 0, 3, 0.05).name('cool top light');
   gui.onChange(applyParams);
 }
 applyParams();
 
-// --- loop --------------------------------------------------------------------
-const clock = new THREE.Clock();
-let meterT = 0;
-function frame() {
-  const dt = Math.min(clock.getDelta(), 0.05);
-  const t = clock.elapsedTime;
-  hero.update(dt, t, input, world);
-  world.update(t);
-  meterT -= dt;
-  if (meterT <= 0) { measureLight(); meterT = 0.1; }
+// --- drawing ------------------------------------------------------------------------------
+let viewT = 0;
+function draw(dt) {
+  viewT += dt;
+  const s = sim.state, p = s.player;
+  hero.sync(p, viewT);
+  enemies.sync(s.enemies, viewT);
+  world.update(viewT);
+  fx.update(dt);
+  hud.update(dt, {
+    hpFrac: p.hp / PLAYER.hp,
+    staminaFrac: p.stamina / PLAYER.stamina,
+    lightLevel: sim.lightAt(p.x, p.z),
+    waveNumber: s.wave,
+    enemies: s.enemies.filter((e) => e.state !== 'dead').length,
+    dead: p.state === 'dead',
+    canRestart: p.state === 'dead' && p.stateT >= WAVES.deathPause,
+  });
+  fixedLights[shadowTurn++ % fixedLights.length].shadow.needsUpdate = true;
   pixel.render(scene, camera);
+}
+
+// --- loop: fixed simulation ticks, drawn once per display frame -------------------------------
+let last = performance.now(), acc = 0, paused = false;
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.1);
+  last = now;
+  if (paused) { draw(0); requestAnimationFrame(frame); return; }
+  if (hitstop > 0) hitstop -= dt;                           // a brief freeze sells a heavy blow
+  else {
+    acc += dt;
+    while (acc >= TICK && hitstop <= 0) { tick(); acc -= TICK; }
+    if (hitstop > 0) acc = 0;
+  }
+  draw(dt);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
 // debug hook: lets tests drive the game without waiting on animation frames
-let simT = 0;
 window.__game = {
-  scene, camera, hero, world, params, applyParams, input, measureLight,
-  step(dt = 1 / 60, n = 1) {
-    for (let i = 0; i < n; i++) { simT += dt; hero.update(dt, simT, input, world); world.update(simT); }
-    measureLight(); pixel.render(scene, camera);
-  },
-  get lightLevel() { return lightLevel; },
+  scene, camera, hero, world, sim, params, applyParams, held, pressed, renderer: pixel.renderer,
+  step(n = 1) { for (let i = 0; i < n; i++) tick(); hitstop = 0; draw(n * TICK); },
+  pause(on = true) { paused = on; },
 };

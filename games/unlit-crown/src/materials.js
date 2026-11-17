@@ -105,6 +105,17 @@ export function stoneMaterial({ color = 0xffffff, pattern = 'plain', flat = fals
   return m;
 }
 
+// Characters are many small parts. Drawing each part into every shadow map is the single
+// largest cost, so parts cast nothing and this invisible capsule casts for the whole body.
+const SHADOW_ONLY = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+export function shadowProxy(radius, height) {
+  const m = new THREE.Mesh(new THREE.CapsuleGeometry(radius, Math.max(0.01, height - radius * 2), 2, 6), SHADOW_ONLY);
+  m.position.y = height / 2;
+  m.castShadow = true;
+  m.layers.set(LAYER_FX);                                   // kept out of the outline pass
+  return m;
+}
+
 // Soft round glow sprite; the pixel pass turns it into stepped halos.
 let glowTex = null;
 export function glowSprite(color, size, opacity = 0.5) {

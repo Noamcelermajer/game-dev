@@ -2,6 +2,7 @@
 // Props are looked up by object name; their materials are replaced by name with the game's own.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { stoneMaterial } from './materials.js';
 import { LAYER_FX } from './render.js';
 
@@ -65,5 +66,40 @@ export async function loadKit() {
     return ob;
   }
 
-  return { place, names: [...sources.keys()] };
+  // Static props are cheap to place but costly to draw one by one, because every mesh is
+  // redrawn for each pass and each shadow. add() queues a prop; build() merges everything
+  // queued into one mesh per material.
+  const buckets = new Map();
+  const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0);
+  function add(name, { x = 0, y = 0, z = 0, rot = 0, scale = 1, tint = null, cast = true } = {}) {
+    const src = sources.get(name);
+    if (!src) throw new Error(`No prop named "${name}" in the kit`);
+    M.compose(new THREE.Vector3(x, y, z), Q.setFromAxisAngle(UP, rot), new THREE.Vector3(scale, scale, scale));
+    src.traverse((o) => {
+      if (!o.isMesh) return;
+      const matName = o.material.name;
+      const fx = Boolean(GLOW[matName]) || Boolean(SPEC[matName]?.fx);
+      const key = `${matName}|${tint ?? ''}|${cast && !fx}`;
+      if (!buckets.has(key)) buckets.set(key, { matName, tint, fx, cast: cast && !fx, parts: [] });
+      const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+      for (const attr of Object.keys(g.attributes)) if (attr !== 'position' && attr !== 'normal') g.deleteAttribute(attr);
+      const local = o === src ? M : M.clone().multiply(o.matrix);
+      buckets.get(key).parts.push(g.applyMatrix4(local));
+    });
+  }
+  function build() {
+    const group = new THREE.Group();
+    for (const b of buckets.values()) {
+      const mesh = new THREE.Mesh(mergeGeometries(b.parts), materialFor(b.matName, b.tint));
+      mesh.castShadow = b.cast;
+      mesh.receiveShadow = !GLOW[b.matName];
+      if (b.fx) mesh.layers.set(LAYER_FX);
+      group.add(mesh);
+      for (const p of b.parts) p.dispose();
+    }
+    buckets.clear();
+    return group;
+  }
+
+  return { place, add, build, names: [...sources.keys()] };
 }
