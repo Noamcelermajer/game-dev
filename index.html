@@ -63,7 +63,7 @@
       root.appendChild(p);
     }
 
-    fetch('games.json')
+    fetch('games.json', { cache: 'no-cache' })
       .then(r => r.json())
       .then(games => {
         if (!games.length) {

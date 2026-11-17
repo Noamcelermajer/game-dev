@@ -7,3 +7,5 @@ Thumbs.db
 .vscode/
 .idea/
 .cache/
+*.blend
+*.blend1

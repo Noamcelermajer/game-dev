@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "slug": "unlit-crown",
+    "title": "The Unlit Crown",
+    "description": "Pixel-art action RPG where light is real. M0: the lighting test arena.",
+    "tags": ["rpg", "3d-to-pixel", "work in progress"],
+    "added": "2026-11-17"
+  }
+]
